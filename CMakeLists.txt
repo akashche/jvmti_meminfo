@@ -39,6 +39,7 @@ staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_concurrent )
 staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_io )
 staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_utils )
 staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_tinydir )
+staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_jni )
 
 # pkg-config
 set ( ${PROJECT_NAME}_DEPS
@@ -46,7 +47,8 @@ set ( ${PROJECT_NAME}_DEPS
         staticlib_support
         staticlib_concurrent
         staticlib_io
-        staticlib_tinydir )
+        staticlib_tinydir
+        staticlib_jni )
 staticlib_pkg_check_modules ( ${PROJECT_NAME}_DEPS_PC REQUIRED ${PROJECT_NAME}_DEPS )
 
 # sources
@@ -59,8 +61,8 @@ source_group ( "include" FILES ${${PROJECT_NAME}_HEADERS} )
 #includes
 target_include_directories ( ${PROJECT_NAME} BEFORE PRIVATE 
         ${CMAKE_CURRENT_LIST_DIR}/src 
-        ${${PROJECT_NAME}_DEPS_PC_INCLUDE_DIRS}
-        ${JAVA_HOME}/include )
+        ${JAVA_HOME}/include
+        ${${PROJECT_NAME}_DEPS_PC_INCLUDE_DIRS} )
 if ( STATICLIB_TOOLCHAIN MATCHES "windows_[^_]+_[^_]+" )
     target_include_directories ( ${PROJECT_NAME} BEFORE PRIVATE ${JAVA_HOME}/include/win32 )
 elseif ( STATICLIB_TOOLCHAIN MATCHES "linux_[^_]+_[^_]+" )

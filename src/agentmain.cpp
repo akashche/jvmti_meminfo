@@ -21,273 +21,12 @@
 #include "staticlib/config.hpp"
 #include "staticlib/concurrent.hpp"
 #include "staticlib/io.hpp"
+#include "staticlib/jni.hpp"
 #include "staticlib/support.hpp"
 #include "staticlib/tinydir.hpp"
 
 #include "jni_exception.hpp"
 #include "jvmti_exception.hpp"
-
-namespace jni_helper {
-
-class java_vm_ptr;
-
-java_vm_ptr& static_java_vm(JavaVM* jvm = nullptr);
-
-class jni_error_checker {
-public:
-    void operator=(jint err) {
-        if (JNI_OK != err) {
-            throw jni_exception(TRACEMSG("JNI error code: [" + sl::support::to_string(err) + "]"));
-        }
-    }
-};
-
-class java_vm_ptr {
-    sl::support::observer_ptr<JavaVM> jvm;
-    sl::concurrent::countdown_latch init_latch;
-    std::atomic<bool> shutdown_flag;
-    sl::concurrent::condition_latch shutdown_latch;
-
-public:
-    java_vm_ptr(JavaVM* vm) :
-    jvm(vm),
-    init_latch(1),
-    shutdown_flag(false),
-    shutdown_latch([this] {
-
-        return !this->running();
-    }) { }
-
-    java_vm_ptr(const java_vm_ptr&) = delete;
-
-    java_vm_ptr& operator=(const java_vm_ptr&) = delete;
-
-    JavaVM* operator->() {
-        return jvm.get();
-    }
-
-    JavaVM* get() {
-        return jvm.get();
-    }
-
-    bool running() {
-        return !shutdown_flag.load(std::memory_order_acquire);
-    }
-
-    void await_init_complete() {
-        init_latch.await();
-    }
-
-    void notify_init_complete() {
-        init_latch.count_down();
-    }
-
-    void thread_sleep_before_shutdown(std::chrono::milliseconds millis) {
-        shutdown_latch.await(millis);
-    }
-
-    void notify_shutdown() {
-        shutdown_flag.store(true, std::memory_order_release);
-        shutdown_latch.notify_all();
-    }
-};
-
-class thread_local_jni_env_ptr {
-    std::unique_ptr<JNIEnv, std::function<void(JNIEnv*)>> jni;
-    
-public:
-    thread_local_jni_env_ptr(JavaVM* javavm = nullptr) :
-    jni([javavm] {
-        JavaVM* jvm = nullptr != javavm ? javavm : static_java_vm().get();
-        JNIEnv* env;
-        auto getenv_err = jvm->GetEnv(reinterpret_cast<void**> (std::addressof(env)), JNI_VERSION_1_6);
-        switch (getenv_err) {
-        case JNI_OK:
-            return std::unique_ptr<JNIEnv, std::function<void(JNIEnv*)>>(env, [](JNIEnv*) { /* no-op */ });
-        case JNI_EDETACHED: {
-            auto attach_err = jvm->AttachCurrentThread(reinterpret_cast<void**> (std::addressof(env)), nullptr);
-            if (JNI_OK == attach_err) {
-                return std::unique_ptr<JNIEnv, std::function<void(JNIEnv*)>>(env, [jvm](JNIEnv*) {
-                    auto detach_err = jvm->DetachCurrentThread();
-                    if (JNI_OK != detach_err) {
-                        // something went wrong, lets crash early
-                        throw jni_exception(TRACEMSG("JNI 'DetachCurrentThread' error code: [" + sl::support::to_string(detach_err) + "]"));
-                    }
-                });
-            } else {
-                throw jni_exception(TRACEMSG("JNI 'AttachCurrentThread' error code: [" + sl::support::to_string(attach_err) + "]"));
-            }
-        }
-        default:
-            throw jni_exception(TRACEMSG("JNI 'GetEnv' error code: [" + sl::support::to_string(getenv_err) + "]"));
-        }
-    }()) { }
-    
-    thread_local_jni_env_ptr(const thread_local_jni_env_ptr&) = delete;
-    
-    thread_local_jni_env_ptr& operator=(const thread_local_jni_env_ptr&) = delete;
-    
-    thread_local_jni_env_ptr(thread_local_jni_env_ptr&& other) :
-    jni(std::move(other.jni)) { }
-        
-    thread_local_jni_env_ptr& operator=(thread_local_jni_env_ptr&& other) {
-        jni = std::move(other.jni);
-        return *this;
-    }
-
-    JNIEnv* operator->() {
-        return jni.get();
-    }
-
-    JNIEnv* get() {
-        return jni.get();
-    }
-};
-
-class jobject_ptr;
-
-class jclass_ptr {
-    std::string clsname;
-    std::shared_ptr<_jclass> cls;
-
-public:
-    jclass_ptr(const std::string& classname) :
-    clsname(classname.data(), classname.length()),
-    cls([this] {
-        auto env = thread_local_jni_env_ptr();
-        jclass local = env->FindClass(clsname.c_str());
-        if (nullptr == local) {
-            throw jni_exception(TRACEMSG("Cannot load class, name: [" + clsname + "]"));
-        }
-        jclass global = static_cast<jclass> (env->NewGlobalRef(local));
-        if (nullptr == global) {
-            throw jni_exception(TRACEMSG("Cannot create global ref for class, name: [" + clsname + "]"));
-        }
-        env->DeleteLocalRef(local);
-        return std::shared_ptr<_jclass>(global, [](jclass clazz) {
-            auto env = thread_local_jni_env_ptr();
-            env->DeleteGlobalRef(clazz);
-        });
-    }()) { }
-
-    jclass_ptr(const jclass_ptr& other) :
-    clsname(other.clsname.data(), other.clsname.length()),
-    cls(other.cls) { }
-
-    jclass_ptr& operator=(const jclass_ptr& other) {
-        clsname = std::string(other.clsname.data(), other.clsname.length());
-        cls = other.cls;
-        return *this;
-    }
-
-    jclass operator->() {
-        return cls.get();
-    }
-
-    jclass get() {
-        return cls.get();
-    }
-
-    template<typename Result, typename Func, typename... Args>
-    Result call_static_method(const std::string& methodname, const std::string& signature,
-            Func func, Args... args) {
-        auto env = thread_local_jni_env_ptr();
-        jmethodID method = env->GetStaticMethodID(cls.get(), methodname.c_str(), signature.c_str());
-        if (nullptr == method) {
-            throw jni_exception(TRACEMSG("Cannot find method, name: [" + methodname + "]," +
-                    " signature: [" + signature + "], class: [" + clsname + "]"));
-        }
-        Result res = (env.get()->*func)(cls.get(), method, args...);
-        if (env->ExceptionCheck()) {
-            env->ExceptionClear();
-            throw jni_exception(TRACEMSG("Exception raised when calling method,"
-                    " name: [" + methodname + "], signature: [" + signature + "], class: [" + clsname + "]"));
-        }
-        return res;
-    }
-
-    template<typename... Args>
-    jobject_ptr call_static_object_method(const std::string& methodname, const std::string& signature,
-            Args... args);
-
-    const std::string& name() {
-        return clsname;
-    }
-};
-
-
-class jobject_ptr {
-    jclass_ptr cls;
-    std::shared_ptr<_jobject> obj;
-
-public:
-    jobject_ptr(jclass_ptr clazz, jobject local) :
-    cls(clazz),
-    obj([this, local] {
-        auto env = thread_local_jni_env_ptr();
-        // local references will die on jni detach
-        jobject global = static_cast<jobject> (env->NewGlobalRef(local));
-        if (nullptr == global) {
-            throw jni_exception(TRACEMSG("Cannot create global ref for object, class name: [" + cls.name() + "]"));
-        }
-        env->DeleteLocalRef(local);
-        return std::shared_ptr<_jobject>(global, [](jobject obj) {
-            auto env = thread_local_jni_env_ptr();
-            env->DeleteGlobalRef(obj);
-        });
-    }()) { }
-
-    jobject_ptr(const jobject_ptr& other) :
-    cls(other.cls),
-    obj(other.obj) { }
-
-    jobject_ptr& operator=(const jobject_ptr& other) {
-        cls = other.cls;
-        obj = other.obj;
-        return *this;
-    }
-
-    jobject operator->() {
-        return obj.get();
-    }
-
-    jobject get() {
-        return obj.get();
-    }
-
-    template<typename Result, typename Func, typename... Args>
-    Result call_method(const std::string& methodname, const std::string& signature,
-            Func func, Args... args) {
-        auto env = thread_local_jni_env_ptr();
-        jmethodID method = env->GetMethodID(cls.get(), methodname.c_str(), signature.c_str());
-        if (nullptr == method) {
-            throw jni_exception(TRACEMSG("Cannot find method, name: [" + methodname + "]," +
-                    " signature: [" + signature + "], class: [" + cls.name() + "]"));
-        }
-        Result res = (env.get()->*func)(obj.get(), method, args...);
-        if (env->ExceptionCheck()) {
-            env->ExceptionClear();
-            throw jni_exception(TRACEMSG("Exception raised when calling method,"
-                    " name: [" + methodname + "], signature: [" + signature + "], class: [" + cls.name() + "]"));
-        }
-        return res;
-    }
-};
-
-template<typename... Args>
-jobject_ptr jclass_ptr::call_static_object_method(const std::string& methodname, const std::string& signature,
-        Args... args) {
-    auto env = thread_local_jni_env_ptr();
-    jobject local = call_static_method<jobject>(methodname, signature, &JNIEnv::CallStaticObjectMethod, args...);
-    return jobject_ptr(*this, local);
-}
-
-java_vm_ptr& static_java_vm(JavaVM* jvm) {
-    static java_vm_ptr vm{jvm};
-    return vm;
-}
-
-} // namespace
 
 namespace jvmti_helper {
 
@@ -306,12 +45,12 @@ class jvmti_env_ptr {
 public:
     jvmti_env_ptr(JavaVM* jvm) :
     jvmti([jvm] {
-        jni_helper::jni_error_checker ec;
+        sl::jni::error_checker ec;
         jvmtiEnv* env;
         ec = jvm->GetEnv(reinterpret_cast<void**> (std::addressof(env)), JVMTI_VERSION);
         return std::unique_ptr<jvmtiEnv, std::function<void(jvmtiEnv*)>>(env, [jvm](jvmtiEnv * ptr) {
             // pass captured jvm pointer in case of destruction before global jvm pointer init
-            auto scoped_jni = jni_helper::thread_local_jni_env_ptr(jvm);
+            auto scoped_jni = sl::jni::thread_local_jni_env_ptr(jvm);
             // lets crash early on error
             jvmti_error_checker ec;
             ec = ptr->DisposeEnvironment();
@@ -354,9 +93,9 @@ protected:
         // start worker
         this->worker = std::thread([this, javavm] {
             // init global jvm pointer
-            jni_helper::static_java_vm(javavm);
+            sl::jni::static_java_vm(javavm);
             // wait for init
-            jni_helper::static_java_vm().await_init_complete();
+            sl::jni::static_java_vm().await_init_complete();
             // call inheritor
             static_cast<T*> (this)->operator()();
         });
@@ -369,7 +108,7 @@ protected:
     // virtual is unnecessary
     ~jvmti_base() STATICLIB_NOEXCEPT {
         std::cout << "Shutting down ..." << std::endl;
-        jni_helper::static_java_vm().notify_shutdown();
+        sl::jni::static_java_vm().notify_shutdown();
         worker.join();
     }
         
@@ -390,7 +129,7 @@ private:
         jvmtiEventCallbacks cbs;
         memset(std::addressof(cbs), 0, sizeof (cbs));
         cbs.VMInit = [](jvmtiEnv*, JNIEnv*, jthread) {
-            jni_helper::static_java_vm().notify_init_complete();
+            sl::jni::static_java_vm().notify_init_complete();
         };
         jvmti_error_checker ec;
         ec = jvmti->SetEventCallbacks(std::addressof(cbs), sizeof (cbs));
@@ -408,9 +147,9 @@ public:
     
     void operator()() STATICLIB_NOEXCEPT {
         try {
-            while(jni_helper::static_java_vm().running()) {
+            while(sl::jni::static_java_vm().running()) {
                 print_mem();
-                jni_helper::static_java_vm().thread_sleep_before_shutdown(std::chrono::milliseconds(5000));
+                sl::jni::static_java_vm().thread_sleep_before_shutdown(std::chrono::milliseconds(5000));
             }
             // all spawned threads must be joined at this point
         } catch(const std::exception& e) {
@@ -423,9 +162,8 @@ public:
 private:
     void print_mem() {
 //        auto scoped_jni = jni_helper::thread_local_jni_ptr();
-        auto rt = jni_helper::jclass_ptr("java/lang/Runtime");
+        auto rt = sl::jni::jclass_ptr("java/lang/Runtime");
         auto obj = rt.call_static_object_method("getRuntime", "()Ljava/lang/Runtime;");
-        std::cout << "pre-call_method" << std::endl;
         auto res = obj.call_method<jlong>("totalMemory", "()J", &JNIEnv::CallLongMethod);
         std::cout << res << std::endl;
         std::string path = "/proc/self/status";
