@@ -108,12 +108,11 @@ public:
             auto attach_err = jvm->AttachCurrentThread(reinterpret_cast<void**> (std::addressof(env)), nullptr);
             if (JNI_OK == attach_err) {
                 return std::unique_ptr<JNIEnv, std::function<void(JNIEnv*)>>(env, [](JNIEnv*) {
-                    // TODO: JNIEnv lifecycle
-//                    auto detach_err = static_java_vm()->DetachCurrentThread();
-//                    if (JNI_OK != detach_err) {
-//                        // something went wrong, lets crash early
-//                        throw jni_exception(TRACEMSG("JNI 'DetachCurrentThread' error code: [" + sl::support::to_string(detach_err) + "]"));
-//                    }
+                    auto detach_err = static_java_vm()->DetachCurrentThread();
+                    if (JNI_OK != detach_err) {
+                        // something went wrong, lets crash early
+                        throw jni_exception(TRACEMSG("JNI 'DetachCurrentThread' error code: [" + sl::support::to_string(detach_err) + "]"));
+                    }
                 });
             } else {
                 throw jni_exception(TRACEMSG("JNI 'AttachCurrentThread' error code: [" + sl::support::to_string(attach_err) + "]"));
@@ -145,6 +144,7 @@ public:
     }
 };
 
+class jobject_ptr;
 
 class jclass_ptr {
     std::string clsname;
@@ -206,6 +206,10 @@ public:
         return res;
     }
 
+    template<typename... Args>
+    jobject_ptr call_static_object_method(const std::string& methodname, const std::string& signature,
+            Args... args);
+
     const std::string& name() {
         return clsname;
     }
@@ -221,7 +225,7 @@ public:
     cls(clazz),
     obj([this, local] {
         auto env = thread_local_jni_ptr();
-        // let's play safe now and measure later
+        // local references will die on jni detach
         jobject global = static_cast<jobject> (env->NewGlobalRef(local));
         if (nullptr == global) {
             throw jni_exception(TRACEMSG("Cannot create global ref for object, class name: [" + cls.name() + "]"));
@@ -229,7 +233,7 @@ public:
         env->DeleteLocalRef(local);
         return std::shared_ptr<_jobject>(global, [](jobject obj) {
             auto env = thread_local_jni_ptr();
-            env->DeleteLocalRef(obj);
+            env->DeleteGlobalRef(obj);
         });
     }()) { }
 
@@ -270,6 +274,13 @@ public:
     }
 };
 
+template<typename... Args>
+jobject_ptr jclass_ptr::call_static_object_method(const std::string& methodname, const std::string& signature,
+        Args... args) {
+    auto env = thread_local_jni_ptr();
+    jobject local = call_static_method<jobject>(methodname, signature, &JNIEnv::CallStaticObjectMethod, args...);
+    return jobject_ptr(*this, local);
+}
 
 java_vm_ptr& static_java_vm(JavaVM* jvm) {
     static java_vm_ptr vm{jvm};
@@ -380,18 +391,18 @@ public:
     
 private:
     void print_mem() {
+//        auto scoped_jni = jni_helper::thread_local_jni_ptr();
         auto rt = jni_helper::jclass_ptr("java/lang/Runtime");
-        auto obj = rt.call_static_method<jobject>("getRuntime", "()Ljava/lang/Runtime;", &JNIEnv::CallStaticObjectMethod);
-        auto jobj = jni_helper::jobject_ptr(rt, obj);
-        auto res = jobj.call_method<jlong>("totalMemory", "()J", &JNIEnv::CallLongMethod);
-        
+        auto obj = rt.call_static_object_method("getRuntime", "()Ljava/lang/Runtime;");
+        std::cout << "pre-call_method" << std::endl;
+        auto res = obj.call_method<jlong>("totalMemory", "()J", &JNIEnv::CallLongMethod);
+        std::cout << res << std::endl;
         std::string path = "/proc/self/status";
         auto src = sl::tinydir::file_source(path);
-        auto sink = sl::io::streambuf_sink(std::cout.rdbuf());
+//        auto sink = sl::io::streambuf_sink(std::cout.rdbuf());
+        auto sink = sl::io::null_sink();
         sl::io::copy_all(src, sink);
-        std::cout << std::endl << std::endl;
-        std::cout << res << std::endl;
-        std::cout << std::endl << std::endl;
+//        std::cout << std::endl << std::endl;
     }
 
 };
