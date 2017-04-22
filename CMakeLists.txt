@@ -40,6 +40,7 @@ staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_io )
 staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_utils )
 staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_tinydir )
 staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_jni )
+staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_jvmti )
 
 # pkg-config
 set ( ${PROJECT_NAME}_DEPS
@@ -48,7 +49,8 @@ set ( ${PROJECT_NAME}_DEPS
         staticlib_concurrent
         staticlib_io
         staticlib_tinydir
-        staticlib_jni )
+        staticlib_jni
+        staticlib_jvmti )
 staticlib_pkg_check_modules ( ${PROJECT_NAME}_DEPS_PC REQUIRED ${PROJECT_NAME}_DEPS )
 
 # sources
