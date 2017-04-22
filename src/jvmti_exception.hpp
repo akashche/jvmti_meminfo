@@ -5,8 +5,8 @@
  * Created on April 13, 2017, 10:38 AM
  */
 
-#ifndef MEMINFO_JVMTI_HELPER_EXCEPTION_HPP
-#define	MEMINFO_JVMTI_HELPER_EXCEPTION_HPP
+#ifndef MEMINFO_JVMTI_EXCEPTION_HPP
+#define	MEMINFO_JVMTI_EXCEPTION_HPP
 
 #include "staticlib/support/exception.hpp"
 
@@ -34,5 +34,5 @@ public:
 
 } //namespace
 
-#endif	/* MEMINFO_JVMTI_HELPER_EXCEPTION_HPP */
+#endif	/* MEMINFO_JVMTI_EXCEPTION_HPP */
 
