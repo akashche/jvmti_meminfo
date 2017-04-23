@@ -40,12 +40,6 @@ public:
     
 private:
     void collect_and_write_measurement() {
-//        std::string path = "/proc/self/statm";
-//        auto src = sl::tinydir::file_source(path);
-//        auto sink = sl::io::streambuf_sink(std::cout.rdbuf());
-//        sl::io::copy_all(src, sink);
-//        std::cout << std::endl << std::endl;
-        
         uint32_t os = collect_mem_from_os();
         uint32_t jvm = collect_mem_from_jvm();
         std::cout << os << " : " << jvm << std::endl;
@@ -61,20 +55,34 @@ private:
 #endif // STATICLIB_LINUX
     }
     
-    uint32_t collect_mem_from_jvm() {
-        auto scoped_jni = sl::jni::thread_local_jni_env_ptr();
-        auto mfcls = sl::jni::jclass_ptr("java/lang/management/ManagementFactory");
-        auto membeancls = sl::jni::jclass_ptr("java/lang/management/MemoryMXBean");
-        auto membean = mfcls.call_static_object_method(membeancls, "getMemoryMXBean", 
-                "()Ljava/lang/management/MemoryMXBean;");
+    uint64_t collect_mem_from_jvm() {
+        return collect_mem_jmm();
+    }
+    
+//    uint64_t collect_mem_jmx() {
+//        // auto scoped_jni = sl::jni::thread_local_jni_env_ptr();
+//        auto mfcls = sl::jni::jclass_ptr("java/lang/management/ManagementFactory");
+//        auto membeancls = sl::jni::jclass_ptr("java/lang/management/MemoryMXBean");
+//        auto membean = mfcls.call_static_object_method(membeancls, "getMemoryMXBean",
+//                "()Ljava/lang/management/MemoryMXBean;");
+//        auto mucls = sl::jni::jclass_ptr("java/lang/management/MemoryUsage");
+//        auto muheap = membean.call_object_method(mucls, "getHeapMemoryUsage",
+//                "()Ljava/lang/management/MemoryUsage;");
+//        auto resheap = muheap.call_method<jlong>("getCommitted", "()J", &JNIEnv::CallLongMethod);
+//        auto munh = membean.call_object_method(mucls, "getNonHeapMemoryUsage",
+//                "()Ljava/lang/management/MemoryUsage;");
+//        auto resnh = munh.call_method<jlong>("getCommitted", "()J", &JNIEnv::CallLongMethod);
+//        return static_cast<uint64_t> (resheap) + static_cast<uint64_t> (resnh);
+//    }
+    
+    uint64_t collect_mem_jmm() {
+        // auto scoped_jni = sl::jni::thread_local_jni_env_ptr();
         auto mucls = sl::jni::jclass_ptr("java/lang/management/MemoryUsage");
-        auto muheap = membean.call_object_method(mucls, "getHeapMemoryUsage", 
-                "()Ljava/lang/management/MemoryUsage;");
+        auto muheap = jmm.call_object_method(mucls, &JmmInterface::GetMemoryUsage, true);
         auto resheap = muheap.call_method<jlong>("getCommitted", "()J", &JNIEnv::CallLongMethod);
-        auto munh = membean.call_object_method(mucls, "getNonHeapMemoryUsage",
-                "()Ljava/lang/management/MemoryUsage;");
+        auto munh = jmm.call_object_method(mucls, &JmmInterface::GetMemoryUsage, false);
         auto resnh = munh.call_method<jlong>("getCommitted", "()J", &JNIEnv::CallLongMethod);
-        return static_cast<uint64_t>(resheap) + static_cast<uint64_t> (resnh);
+        return static_cast<uint64_t> (resheap) + static_cast<uint64_t> (resnh);
     }
     
     uint64_t collect_mem_linux() {
