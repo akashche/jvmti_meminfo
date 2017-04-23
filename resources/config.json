@@ -1,0 +1,4 @@
+{
+    "output_path_json" : "memlog.json",
+    "output_path_gnuplot" : "memlog.dat"
+}

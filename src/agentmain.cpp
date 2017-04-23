@@ -9,20 +9,46 @@
 #include <iostream>
 #include <string>
 
-#include "jmm.h"
-
 #include "staticlib/config.hpp"
 #include "staticlib/io.hpp"
 #include "staticlib/jni.hpp"
+#include "staticlib/json.hpp"
 #include "staticlib/jvmti.hpp"
 #include "staticlib/support.hpp"
 #include "staticlib/tinydir.hpp"
 #include "staticlib/utils.hpp"
 
-class meminfo : public sl::jvmti::agent_base<meminfo> {
+#include "config.hpp"
+#include "memlog_exception.hpp"
+
+namespace memlog {
+
+class agent : public sl::jvmti::agent_base<agent> {
+    config cf;
+    sl::io::buffered_sink<sl::tinydir::file_sink> json_log_file;
+    
 public:
-    meminfo(JavaVM* jvm, char* options) :
-    sl::jvmti::agent_base<meminfo>(jvm, options) { }
+    agent(JavaVM* jvm, char* options) :
+    sl::jvmti::agent_base<agent>(jvm, options),
+    cf(read_config()),
+    json_log_file(sl::tinydir::file_sink(cf.output_path_json)) {
+        json_log_file.write({"[\n"});
+        auto zero_entry = sl::json::value({
+            { "mem_os", 0 },
+            { "mem_jvm", 0 }
+        }).dumps();
+        json_log_file.write({zero_entry});
+    }
+    
+    ~agent() STATICLIB_NOEXCEPT {
+        try {
+            json_log_file.write({"\n]\n"});
+        } catch (const std::exception& e) {
+            std::cout << TRACEMSG(e.what() + "\nAgent destruction error") << std::endl;
+        } catch (...) {
+            std::cout << TRACEMSG("Unexpected agent destruction error") << std::endl;
+        }
+    }
     
     void operator()() STATICLIB_NOEXCEPT {
         try {
@@ -40,9 +66,14 @@ public:
     
 private:
     void collect_and_write_measurement() {
-        uint32_t os = collect_mem_from_os();
-        uint32_t jvm = collect_mem_from_jvm();
-        std::cout << os << " : " << jvm << std::endl;
+        uint64_t os = collect_mem_from_os();
+        uint64_t jvm = collect_mem_from_jvm();
+        auto entry = sl::json::value({
+            { "mem_os", os },
+            { "mem_jvm", jvm }
+        }).dumps();
+        json_log_file.write({",\n"});
+        json_log_file.write({entry});
     }
     
     uint64_t collect_mem_from_os() {
@@ -107,13 +138,29 @@ private:
         std::string num = line.substr(start, idx - start);
         return sl::utils::parse_uint64(num) * 1024;
     }
+    
+    config read_config() {
+        std::string path = [this] {
+            if (!options.empty()) {
+                return options;
+            }
+            auto exepath = sl::utils::current_executable_path();
+            auto exedir = sl::utils::strip_filename(exepath);
+            return exedir + "config.json";
+        }();
+        auto src = sl::tinydir::file_source(path);
+        auto json = sl::json::load(src);
+        return config(json);
+    }
 };
 
-meminfo* global_mi = nullptr;
+} // namespace
+
+memlog::agent* global_agent = nullptr;
 
 JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM* jvm, char* options, void* /* reserved */) {
     try {
-        global_mi = new meminfo(jvm, options);
+        global_agent = new memlog::agent(jvm, options);
         return JNI_OK;
     } catch (const std::exception& e) {
         std::cout << TRACEMSG(e.what() + "\nInitialization error") << std::endl;
@@ -122,6 +169,6 @@ JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM* jvm, char* options, void* /* reserve
 }
 
 JNIEXPORT void JNICALL Agent_OnUnload(JavaVM* /* vm */) {
-    delete global_mi;
+    delete global_agent;
     std::cout << "Shutdown complete" << std::endl;
 }
