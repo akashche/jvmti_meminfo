@@ -91,7 +91,6 @@ private:
     }
     
 //    uint64_t collect_mem_jmx() {
-//        // auto scoped_jni = sl::jni::thread_local_jni_env_ptr();
 //        auto mfcls = sl::jni::jclass_ptr("java/lang/management/ManagementFactory");
 //        auto membeancls = sl::jni::jclass_ptr("java/lang/management/MemoryMXBean");
 //        auto membean = mfcls.call_static_object_method(membeancls, "getMemoryMXBean",
@@ -107,7 +106,6 @@ private:
 //    }
     
     uint64_t collect_mem_jmm() {
-        // auto scoped_jni = sl::jni::thread_local_jni_env_ptr();
         auto mucls = sl::jni::jclass_ptr("java/lang/management/MemoryUsage");
         auto muheap = jmm.call_object_method(mucls, &JmmInterface::GetMemoryUsage, true);
         auto resheap = muheap.call_method<jlong>("getCommitted", "()J", &JNIEnv::CallLongMethod);
