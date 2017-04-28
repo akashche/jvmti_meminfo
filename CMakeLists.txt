@@ -93,4 +93,7 @@ execute_process (
         COMMAND ${JAVA_HOME}/bin/javac -d . ../test/App.java
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} )
 message ( STATUS "Compiling test java app - done" )
-add_test ( test ${JAVA_HOME}/bin/java -agentpath:bin/${${PROJECT_NAME}_TARGET} App )
+add_test ( test
+        ${JAVA_HOME}/bin/java
+        -agentpath:bin/${${PROJECT_NAME}_TARGET}=${CMAKE_CURRENT_LIST_DIR}/resources/config.json
+        App )
