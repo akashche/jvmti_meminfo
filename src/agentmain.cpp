@@ -6,8 +6,17 @@
  */
 
 #include <cctype>
+#include <cstring>
 #include <iostream>
 #include <string>
+
+#include "staticlib/config/os.hpp"
+#ifdef STATICLIB_WINDOWS
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <psapi.h>
+#endif // STATICLIB_WINDOWS
 
 #include "staticlib/config.hpp"
 #include "staticlib/io.hpp"
@@ -33,10 +42,11 @@ public:
     cf(read_config()),
     json_log_file(sl::tinydir::file_sink(cf.output_path_json)) {
         json_log_file.write({"[\n"});
-        auto zero_entry = sl::json::value({
+        sl::json::value zero_entry_json{
             { "mem_os", 0 },
             { "mem_jvm", 0 }
-        }).dumps();
+        };
+        auto zero_entry = zero_entry_json.dumps();
         json_log_file.write({zero_entry});
     }
     
@@ -68,10 +78,11 @@ private:
     void collect_and_write_measurement() {
         uint64_t os = collect_mem_from_os();
         uint64_t jvm = collect_mem_from_jvm();
-        auto entry = sl::json::value({
+        sl::json::value entry_json{
             { "mem_os", os },
             { "mem_jvm", jvm }
-        }).dumps();
+        };
+        auto entry = entry_json.dumps();
         json_log_file.write({",\n"});
         json_log_file.write({entry});
     }
@@ -80,7 +91,7 @@ private:
 #if defined(STATICLIB_LINUX)
         return collect_mem_linux();
 #elif defined(STATICLIB_WINDOWS)
-        static_assert(false, "TODO");
+        return collect_mem_windows();
 #else  
         static_assert(false, "Unsupported OS");
 #endif // STATICLIB_LINUX
@@ -114,6 +125,7 @@ private:
         return static_cast<uint64_t> (resheap) + static_cast<uint64_t> (resnh);
     }
     
+#ifdef STATICLIB_LINUX
     uint64_t collect_mem_linux() {
         static std::string prefix = "VmRSS:";
         auto src = sl::io::make_buffered_source(sl::tinydir::file_source("/proc/self/status"));
@@ -136,6 +148,20 @@ private:
         std::string num = line.substr(start, idx - start);
         return sl::utils::parse_uint64(num) * 1024;
     }
+#endif // STATICLIB_LINUX
+
+#ifdef STATICLIB_WINDOWS
+    uint64_t collect_mem_windows() {
+        PROCESS_MEMORY_COUNTERS pmc;
+        ::memset(std::addressof(pmc), '\0', sizeof(pmc));
+        auto err = ::GetProcessMemoryInfo(GetCurrentProcess(), std::addressof(pmc), sizeof(pmc));
+        if (0 == err) {
+            throw memlog_exception(TRACEMSG("'GetProcessMemoryInfo' error: [" + 
+                    sl::utils::errcode_to_string(GetLastError()) + "]"));
+        }
+        return static_cast<uint64_t>(pmc.WorkingSetSize);
+    }
+#endif // STATICLIB_WINDOWS
     
     config read_config() {
         std::string path = [this] {

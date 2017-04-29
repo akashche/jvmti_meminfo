@@ -18,8 +18,7 @@ if ( NOT DEFINED STATICLIB_TOOLCHAIN )
     endif ( )
 endif ( )
 message ( STATUS "Using toolchain: [${STATICLIB_TOOLCHAIN}]" )
-#set ( STATICLIB_CMAKE ${CMAKE_CURRENT_LIST_DIR}/cmake CACHE INTERNAL "" )    
-set ( STATICLIB_CMAKE /home/alex/projects/staticlibs/cmake/ CACHE INTERNAL "" )    
+set ( STATICLIB_CMAKE ${CMAKE_CURRENT_LIST_DIR}/../../staticlibs/cmake CACHE INTERNAL "" )    
 set ( CMAKE_TOOLCHAIN_FILE ${STATICLIB_CMAKE}/toolchains/${STATICLIB_TOOLCHAIN}.cmake CACHE INTERNAL "" )
 
 # project setup
@@ -29,8 +28,7 @@ include ( ${STATICLIB_CMAKE}/staticlibs_common.cmake )
 
 # options
 set ( JAVA_HOME $ENV{JAVA_HOME} CACHE STRING "Path to JDK directory" )
-#set ( STATICLIB_DEPS ${CMAKE_CURRENT_LIST_DIR}/deps CACHE INTERNAL "" )    
-set ( STATICLIB_DEPS /home/alex/projects/staticlibs/ CACHE INTERNAL "" )    
+set ( STATICLIB_DEPS ${CMAKE_CURRENT_LIST_DIR}/../../staticlibs CACHE INTERNAL "" )    
 
 # dependencies
 if ( NOT STATICLIB_TOOLCHAIN MATCHES "linux_[^_]+_[^_]+" )
@@ -72,6 +70,7 @@ target_include_directories ( ${PROJECT_NAME} BEFORE PRIVATE
         ${${PROJECT_NAME}_DEPS_PC_INCLUDE_DIRS} )
 if ( STATICLIB_TOOLCHAIN MATCHES "windows_[^_]+_[^_]+" )
     target_include_directories ( ${PROJECT_NAME} BEFORE PRIVATE ${JAVA_HOME}/include/win32 )
+    target_link_libraries ( ${PROJECT_NAME} ${JAVA_HOME}/lib/jvm.lib )  
 elseif ( STATICLIB_TOOLCHAIN MATCHES "linux_[^_]+_[^_]+" )
     target_include_directories ( ${PROJECT_NAME} BEFORE PRIVATE ${JAVA_HOME}/include/linux )
 elseif ( STATICLIB_TOOLCHAIN MATCHES "macosx_[^_]+_[^_]+" )
