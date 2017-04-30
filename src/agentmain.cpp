@@ -35,6 +35,7 @@ namespace memlog {
 class agent : public sl::jvmti::agent_base<agent> {
     config cf;
     sl::io::buffered_sink<sl::tinydir::file_sink> json_log_file;
+    bool first_entry_written = false;
     
 public:
     agent(JavaVM* jvm, char* options) :
@@ -42,12 +43,6 @@ public:
     cf(read_config()),
     json_log_file(sl::tinydir::file_sink(cf.output_path_json)) {
         json_log_file.write({"[\n"});
-        sl::json::value zero_entry_json{
-            { "mem_os", 0 },
-            { "mem_jvm", 0 }
-        };
-        auto zero_entry = zero_entry_json.dumps();
-        json_log_file.write({zero_entry});
     }
     
     ~agent() STATICLIB_NOEXCEPT {
@@ -83,7 +78,11 @@ private:
             { "mem_jvm", jvm }
         };
         auto entry = entry_json.dumps();
-        json_log_file.write({",\n"});
+        if (first_entry_written) {
+            json_log_file.write({",\n"});
+        } else {
+            first_entry_written = true;
+        }
         json_log_file.write({entry});
     }
     
