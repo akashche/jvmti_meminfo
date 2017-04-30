@@ -49,9 +49,9 @@ public:
         try {
             json_log_file.write({"\n]\n"});
         } catch (const std::exception& e) {
-            std::cout << TRACEMSG(e.what() + "\nAgent destruction error") << std::endl;
+            std::cerr << TRACEMSG(e.what() + "\nAgent destruction error") << std::endl;
         } catch (...) {
-            std::cout << TRACEMSG("Unexpected agent destruction error") << std::endl;
+            std::cerr << TRACEMSG("Unexpected agent destruction error") << std::endl;
         }
     }
     
@@ -63,9 +63,9 @@ public:
             }
             // all spawned threads must be joined at this point
         } catch(const std::exception& e) {
-            std::cout << TRACEMSG(e.what() + "\nWorker error") << std::endl;
+            std::cerr << TRACEMSG(e.what() + "\nWorker error") << std::endl;
         } catch(...) {
-            std::cout << TRACEMSG("Unexpected worker error") << std::endl;
+            std::cerr << TRACEMSG("Unexpected worker error") << std::endl;
         }
     }
     
@@ -74,8 +74,8 @@ private:
         uint64_t os = collect_mem_from_os();
         uint64_t jvm = collect_mem_from_jvm();
         sl::json::value entry_json{
-            { "mem_os", os },
-            { "mem_jvm", jvm }
+            { "os", os/(1<<20) },
+            { "jvm", jvm/(1<<20) }
         };
         auto entry = entry_json.dumps();
         if (first_entry_written) {
@@ -167,9 +167,11 @@ private:
             if (!options.empty()) {
                 return options;
             }
-            auto exepath = sl::utils::current_executable_path();
-            auto exedir = sl::utils::strip_filename(exepath);
-            return exedir + "config.json";
+            // points to jvm/bin
+            // auto exepath = sl::utils::current_executable_path();
+            // auto exedir = sl::utils::strip_filename(exepath);
+            // return exedir + "config.json";
+            return std::string("config.json");
         }();
         auto src = sl::tinydir::file_source(path);
         auto json = sl::json::load(src);
@@ -186,12 +188,12 @@ JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM* jvm, char* options, void* /* reserve
         global_agent = new memlog::agent(jvm, options);
         return JNI_OK;
     } catch (const std::exception& e) {
-        std::cout << TRACEMSG(e.what() + "\nInitialization error") << std::endl;
+        std::cerr << TRACEMSG(e.what() + "\nInitialization error") << std::endl;
         return JNI_ERR;
     }
 }
 
 JNIEXPORT void JNICALL Agent_OnUnload(JavaVM* /* vm */) {
     delete global_agent;
-    std::cout << "Shutdown complete" << std::endl;
+    // std::cout << "Shutdown complete" << std::endl;
 }

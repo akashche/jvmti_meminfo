@@ -84,6 +84,14 @@ if ( STATICLIB_TOOLCHAIN MATCHES "linux_[^_]+_[^_]+" )
 endif ( )
 target_compile_options ( ${PROJECT_NAME} PRIVATE ${${PROJECT_NAME}_DEPS_PC_CFLAGS_OTHER} )
 
+# copy resources
+configure_file ( ${CMAKE_CURRENT_LIST_DIR}/resources/config.json
+        ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/config.json COPYONLY )
+configure_file ( ${CMAKE_CURRENT_LIST_DIR}/resources/memlog.plot
+        ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/memlog.plot COPYONLY )
+configure_file ( ${CMAKE_CURRENT_LIST_DIR}/resources/plotter.js
+        ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/plotter.js COPYONLY )
+
 # test
 enable_testing ( )
 set ( ${PROJECT_NAME}_TARGET ${CMAKE_SHARED_LIBRARY_PREFIX}${PROJECT_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX} )

@@ -20,15 +20,12 @@ namespace memlog {
 class config {
 public:
     std::string output_path_json;
-    std::string output_path_gnuplot;
 
     config(const sl::json::value& json) {
        for (auto& fi : json.as_object_or_throw("config.json")) {
            auto& name = fi.name();
            if ("output_path_json" == name) {
                output_path_json = fi.as_string_nonempty_or_throw(name);
-           } else if ("output_path_gnuplot" == fi.name()) {
-               output_path_gnuplot = fi.as_string_nonempty_or_throw(name);
            } else {
                throw memlog_exception(TRACEMSG("Invalid config field: [" + fi.name() + "]"));
            }
@@ -37,8 +34,7 @@ public:
     
     sl::json::value to_json() {
         return {
-            { "output_path_json", output_path_json },
-            { "output_path_gnuplot", output_path_gnuplot }
+            { "output_path_json", output_path_json }
         };
     }
     
