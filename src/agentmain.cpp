@@ -34,34 +34,25 @@ namespace memlog {
 
 class agent : public sl::jvmti::agent_base<agent> {
     config cf;
-    sl::io::buffered_sink<sl::tinydir::file_sink> json_log_file;
-    bool first_entry_written = false;
+    sl::json::array_writer<sl::io::buffered_sink<sl::tinydir::file_sink>> log_writer;
     
 public:
     agent(JavaVM* jvm, char* options) :
     sl::jvmti::agent_base<agent>(jvm, options),
     cf(read_config()),
-    json_log_file(sl::tinydir::file_sink(cf.output_path_json)) {
-        json_log_file.write({"[\n"});
-    }
-    
-    ~agent() STATICLIB_NOEXCEPT {
-        try {
-            json_log_file.write({"\n]\n"});
-        } catch (const std::exception& e) {
-            std::cerr << TRACEMSG(e.what() + "\nAgent destruction error") << std::endl;
-        } catch (...) {
-            std::cerr << TRACEMSG("Unexpected agent destruction error") << std::endl;
-        }
+    log_writer(sl::io::make_buffered_sink(sl::tinydir::file_sink(cf.output_path_json))) {
+        write_to_stdout("agent created");
     }
     
     void operator()() STATICLIB_NOEXCEPT {
+        write_to_stdout("agent initialized");
         try {
             while(sl::jni::static_java_vm().running()) {
                 collect_and_write_measurement();
                 sl::jni::static_java_vm().thread_sleep_before_shutdown(std::chrono::milliseconds(1000));
             }
             // all spawned threads must be joined at this point
+            write_to_stdout("shutting down");
         } catch(const std::exception& e) {
             std::cerr << TRACEMSG(e.what() + "\nWorker error") << std::endl;
         } catch(...) {
@@ -69,21 +60,18 @@ public:
         }
     }
     
+    bool can_write_stdout() {
+        return cf.stdout_messages;
+    }
+    
 private:
     void collect_and_write_measurement() {
         uint64_t os = collect_mem_from_os();
         uint64_t jvm = collect_mem_from_jvm();
-        sl::json::value entry_json{
-            { "os", os/(1<<20) },
-            { "jvm", jvm/(1<<20) }
-        };
-        auto entry = entry_json.dumps();
-        if (first_entry_written) {
-            json_log_file.write({",\n"});
-        } else {
-            first_entry_written = true;
-        }
-        json_log_file.write({entry});
+        log_writer.write({
+            { "os", os / (1 << 20)},
+            { "jvm", jvm / (1 << 20)}
+        });
     }
     
     uint64_t collect_mem_from_os() {
@@ -177,6 +165,12 @@ private:
         auto json = sl::json::load(src);
         return config(json);
     }
+    
+    void write_to_stdout(const std::string& message) {
+        if (cf.stdout_messages) {
+            std::cout<< "memlog_agent: " << message << std::endl;
+        }
+    }
 };
 
 } // namespace
@@ -194,6 +188,9 @@ JNIEXPORT jint JNICALL Agent_OnLoad(JavaVM* jvm, char* options, void* /* reserve
 }
 
 JNIEXPORT void JNICALL Agent_OnUnload(JavaVM* /* vm */) {
+    bool can_write = global_agent->can_write_stdout();
     delete global_agent;
-    // std::cout << "Shutdown complete" << std::endl;
+    if (can_write) {
+        std::cout << "memlog_agent: shutdown complete" << std::endl;
+    }
 }
