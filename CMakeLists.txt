@@ -57,7 +57,16 @@ set ( ${PROJECT_NAME}_DEPS
 staticlib_pkg_check_modules ( ${PROJECT_NAME}_DEPS_PC REQUIRED ${PROJECT_NAME}_DEPS )
 
 # sources
-file ( GLOB_RECURSE ${PROJECT_NAME}_SRC ${CMAKE_CURRENT_LIST_DIR}/src/*.cpp )
+set ( ${PROJECT_NAME}_SRC
+    src/agentmain.cpp )
+if ( STATICLIB_TOOLCHAIN MATCHES "windows_[^_]+_[^_]+" )
+    list ( APPEND ${PROJECT_NAME}_SRC src/collect_mem_windows.cpp )
+elseif ( STATICLIB_TOOLCHAIN MATCHES "linux_[^_]+_[^_]+" )
+    list ( APPEND ${PROJECT_NAME}_SRC src/collect_mem_linux.cpp )
+elseif ( STATICLIB_TOOLCHAIN MATCHES "macosx_[^_]+_[^_]+" )
+    message( FATAL_ERROR "Unsupported platform" )
+endif ( )
+
 file ( GLOB_RECURSE ${PROJECT_NAME}_HEADERS ${CMAKE_CURRENT_LIST_DIR}/include/*.hpp )
 add_library ( ${PROJECT_NAME} SHARED ${${PROJECT_NAME}_SRC} ${${PROJECT_NAME}_HEADERS} )
 source_group ( "src" FILES ${${PROJECT_NAME}_SRC} )

@@ -10,14 +10,6 @@
 #include <iostream>
 #include <string>
 
-#include "staticlib/config/os.hpp"
-#ifdef STATICLIB_WINDOWS
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#include <psapi.h>
-#endif // STATICLIB_WINDOWS
-
 #include "staticlib/config.hpp"
 #include "staticlib/io.hpp"
 #include "staticlib/jni.hpp"
@@ -28,6 +20,7 @@
 #include "staticlib/utils.hpp"
 
 #include "config.hpp"
+#include "collect_mem_os.hpp"
 #include "memlog_exception.hpp"
 
 namespace memlog {
@@ -66,89 +59,44 @@ public:
     
 private:
     void collect_and_write_measurement() {
-        uint64_t os = collect_mem_from_os();
-        uint64_t jvm = collect_mem_from_jvm();
         log_writer.write({
-            { "os", os / (1 << 20)},
-            { "jvm", jvm / (1 << 20)}
+            { "os", collect_mem_from_os() },
+            { "jvm", collect_mem_from_jvm() }
         });
     }
     
-    uint64_t collect_mem_from_os() {
-#if defined(STATICLIB_LINUX)
-        return collect_mem_linux();
-#elif defined(STATICLIB_WINDOWS)
-        return collect_mem_windows();
-#else  
-        static_assert(false, "Unsupported OS");
-#endif // STATICLIB_LINUX
-    }
-    
-    uint64_t collect_mem_from_jvm() {
-        return collect_mem_jmm();
-    }
-    
-//    uint64_t collect_mem_jmx() {
-//        auto mfcls = sl::jni::jclass_ptr("java/lang/management/ManagementFactory");
-//        auto membeancls = sl::jni::jclass_ptr("java/lang/management/MemoryMXBean");
-//        auto membean = mfcls.call_static_object_method(membeancls, "getMemoryMXBean",
-//                "()Ljava/lang/management/MemoryMXBean;");
-//        auto mucls = sl::jni::jclass_ptr("java/lang/management/MemoryUsage");
-//        auto muheap = membean.call_object_method(mucls, "getHeapMemoryUsage",
-//                "()Ljava/lang/management/MemoryUsage;");
-//        auto resheap = muheap.call_method<jlong>("getCommitted", "()J", &JNIEnv::CallLongMethod);
-//        auto munh = membean.call_object_method(mucls, "getNonHeapMemoryUsage",
-//                "()Ljava/lang/management/MemoryUsage;");
-//        auto resnh = munh.call_method<jlong>("getCommitted", "()J", &JNIEnv::CallLongMethod);
-//        return static_cast<uint64_t> (resheap) + static_cast<uint64_t> (resnh);
-//    }
-    
-    uint64_t collect_mem_jmm() {
+    sl::json::value collect_mem_from_jvm() {
         auto mucls = sl::jni::jclass_ptr("java/lang/management/MemoryUsage");
+        // heap
         auto muheap = jmm.call_object_method(mucls, &JmmInterface::GetMemoryUsage, true);
-        auto resheap = muheap.call_method<jlong>("getCommitted", "()J", &JNIEnv::CallLongMethod);
+        auto heap_committed = muheap.call_method<jlong>("getCommitted", "()J", &JNIEnv::CallLongMethod);
+        auto heap_init = muheap.call_method<jlong>("getInit", "()J", &JNIEnv::CallLongMethod);
+        auto heap_max = muheap.call_method<jlong>("getMax", "()J", &JNIEnv::CallLongMethod);
+        auto heap_used = muheap.call_method<jlong>("getUsed", "()J", &JNIEnv::CallLongMethod);
+        // non-heap
         auto munh = jmm.call_object_method(mucls, &JmmInterface::GetMemoryUsage, false);
-        auto resnh = munh.call_method<jlong>("getCommitted", "()J", &JNIEnv::CallLongMethod);
-        return static_cast<uint64_t> (resheap) + static_cast<uint64_t> (resnh);
+        auto nh_committed = munh.call_method<jlong>("getCommitted", "()J", &JNIEnv::CallLongMethod);
+        auto nh_init = munh.call_method<jlong>("getInit", "()J", &JNIEnv::CallLongMethod);
+        auto nh_max = munh.call_method<jlong>("getMax", "()J", &JNIEnv::CallLongMethod);
+        auto nh_used = munh.call_method<jlong>("getUsed", "()J", &JNIEnv::CallLongMethod);
+        
+        auto overall = heap_committed + nh_committed;
+        return {
+            {"overall", overall},
+            {"heap", {
+                {"committed", heap_committed},
+                {"init", heap_init},
+                {"max", heap_max},
+                {"used", heap_used}
+            }},
+            {"nonHeap", {
+                {"committed", nh_committed},
+                {"init", nh_init},
+                {"max", nh_max},
+                {"used", nh_used}
+            }}
+        };
     }
-    
-#ifdef STATICLIB_LINUX
-    uint64_t collect_mem_linux() {
-        static std::string prefix = "VmRSS:";
-        auto src = sl::io::make_buffered_source(sl::tinydir::file_source("/proc/self/status"));
-        std::string line;
-        // std::regex is broken in gcc < 4.9, so parsing manually
-        do {
-            line = src.read_line();
-            if (0 == line.length()) {
-                return 0;
-            }
-        } while (!sl::utils::starts_with(line, prefix));
-        size_t idx = prefix.length();
-        while (idx < line.length() && !::isdigit(line[idx])) {
-            idx += 1;
-        }
-        size_t start = idx;
-        while (idx < line.length() && ::isdigit(line[idx])) {
-            idx += 1;
-        }
-        std::string num = line.substr(start, idx - start);
-        return sl::utils::parse_uint64(num) * 1024;
-    }
-#endif // STATICLIB_LINUX
-
-#ifdef STATICLIB_WINDOWS
-    uint64_t collect_mem_windows() {
-        PROCESS_MEMORY_COUNTERS pmc;
-        ::memset(std::addressof(pmc), '\0', sizeof(pmc));
-        auto err = ::GetProcessMemoryInfo(GetCurrentProcess(), std::addressof(pmc), sizeof(pmc));
-        if (0 == err) {
-            throw memlog_exception(TRACEMSG("'GetProcessMemoryInfo' error: [" + 
-                    sl::utils::errcode_to_string(GetLastError()) + "]"));
-        }
-        return static_cast<uint64_t>(pmc.WorkingSetSize);
-    }
-#endif // STATICLIB_WINDOWS
     
     config read_config() {
         std::string path = [this] {

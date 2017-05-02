@@ -16,7 +16,8 @@ var json = String(new jstr(binary, "UTF-8"));
 var list = JSON.parse(json);
 var out = "";
 for (var i = 0; i < list.length; i++) {
-    out += ((i + 1) + " " + list[i].os + " " + list[i].jvm + "\n");
+    out += ((i + 1) + " " + Math.round(list[i].os.overall/(1<<20)) + " " + 
+            Math.round(list[i].jvm.overall/(1<<20)) + "\n");
 }
 files.write(paths.get("memlog.dat"), out.getBytes("UTF-8"));
 print("Gnuplot data file written: memlog.dat");
