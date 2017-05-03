@@ -45,8 +45,7 @@ public:
         try {
             while(sl::jni::static_java_vm().running()) {
                 collect_and_write_measurement();
-                auto secs = cron.next();
-                auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(secs);
+                auto millis = cron.next<std::chrono::milliseconds>();
                 sl::jni::static_java_vm().thread_sleep_before_shutdown(millis/cf.timeout_divider);
             }
             // all spawned threads must be joined at this point
