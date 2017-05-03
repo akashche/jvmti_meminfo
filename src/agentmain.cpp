@@ -7,6 +7,7 @@
 
 #include <cctype>
 #include <cstring>
+#include <atomic>
 #include <iostream>
 #include <string>
 
@@ -25,6 +26,15 @@
 #include "memlog_exception.hpp"
 
 namespace memlog {
+
+namespace { // anonymous
+
+std::atomic<uint64_t>& static_gcs_count() {
+    static std::atomic<uint64_t> counter{0};
+    return counter;
+}
+
+} // namespace
 
 class agent : public sl::jvmti::agent_base<agent> {
     config cf;
@@ -57,6 +67,24 @@ public:
         }
     }
     
+    std::unique_ptr<jvmtiCapabilities> capabilities() {
+        auto caps = sl::support::make_unique<jvmtiCapabilities>();
+        std::memset(caps.get(), 0, sizeof (*caps));
+        caps->can_generate_garbage_collection_events = 1;
+        return caps;
+    }
+    
+    std::unique_ptr<jvmtiEventCallbacks> callbacks() {
+        auto cbs = sl::support::make_unique<jvmtiEventCallbacks>();
+        std::memset(cbs.get(), 0, sizeof (*cbs));
+        // gc finish events
+        cbs->GarbageCollectionFinish = agent::gc_finish_event;
+        sl::jvmti::error_checker ec;
+        ec = jvmti->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_GARBAGE_COLLECTION_FINISH, nullptr);
+        
+        return cbs;
+    }
+    
     bool can_write_stdout() {
         return cf.stdout_messages;
     }
@@ -65,6 +93,7 @@ private:
     void collect_and_write_measurement() {
         log_writer.write({
             { "currentTimeMillis", current_time_millis() },
+            { "gcEventsCount", static_gcs_count().load(std::memory_order_relaxed) },
             { "os", collect_mem_from_os() },
             { "jvm", collect_mem_from_jvm() }
         });
@@ -129,6 +158,11 @@ private:
         auto val = std::chrono::system_clock::now().time_since_epoch();
         auto millis = val/std::chrono::milliseconds(1);
         return static_cast<uint64_t>(millis);
+    }
+    
+    static void gc_finish_event(jvmtiEnv*) {
+        // http://en.cppreference.com/w/cpp/atomic/memory_order#Relaxed_ordering
+        static_gcs_count().fetch_add(1, std::memory_order_relaxed);
     }
 };
 
