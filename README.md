@@ -9,7 +9,8 @@ Download
 --------
 
 Windows `x86_64` binaries built with [openjdk_8u131](https://github.com/ojdkbuild/ojdkbuild/releases/tag/1.8.0.131-1): 
-[memlog_agent-1.0.zip](https://github.com/akashche/memlog_agent/releases/download/1.0/memlog_agent-1.0.zip) (250 KB)
+
+ - [memlog_agent-1.0.zip](https://github.com/akashche/memlog_agent/releases/download/1.0/memlog_agent-1.0.zip) (250 KB)
 
 To build the agent on Linux see "How to build" section below.
 
@@ -29,6 +30,7 @@ Adjust [agent config](https://github.com/akashche/memlog_agent/blob/master/resou
  - `timeout_divider`: timeout period, defined by Cron expression will be divided by this value (to allow sub-second logging)
 
 Run test-suite specifying path to agent. JVM arguments can be specified with `-J-` prefix.
+
 See [OpenJDK and Containers](https://developers.redhat.com/blog/2017/04/04/openjdk-and-containers/) article
 for details about JVM memory usage tuning:
 
@@ -67,7 +69,7 @@ for details about JVM memory usage tuning:
         }
     }
 
-Use [plotter.js](https://github.com/akashche/memlog_agent/blob/master/resources/plotter.js) script to
+Use sample [plotter.js](https://github.com/akashche/memlog_agent/blob/master/resources/plotter.js) script to
 convert JSON log into table format:
 
     jjs /path/to/plotter.js memlog.json
