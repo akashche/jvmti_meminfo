@@ -43,6 +43,8 @@ staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_tinydir )
 staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_jni )
 staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_jvmti )
 staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_json )
+staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_pimpl )
+staticlib_add_subdirectory ( ${STATICLIB_DEPS}/staticlib_cron )
 
 # pkg-config
 set ( ${PROJECT_NAME}_DEPS
@@ -53,7 +55,9 @@ set ( ${PROJECT_NAME}_DEPS
         staticlib_tinydir
         staticlib_jni
         staticlib_jvmti
-        staticlib_json )
+        staticlib_json
+        staticlib_pimpl
+        staticlib_cron )
 staticlib_pkg_check_modules ( ${PROJECT_NAME}_DEPS_PC REQUIRED ${PROJECT_NAME}_DEPS )
 
 # sources

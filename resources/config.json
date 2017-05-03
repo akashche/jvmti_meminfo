@@ -1,4 +1,6 @@
 {
     "output_path_json" : "memlog.json",
-    "stdout_messages": true
+    "stdout_messages": true,
+    "cron_expr": "* * * * * *",
+    "timeout_divider": 1
 }

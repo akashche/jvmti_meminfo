@@ -11,6 +11,7 @@
 #include <string>
 
 #include "staticlib/config.hpp"
+#include "staticlib/cron.hpp"
 #include "staticlib/io.hpp"
 #include "staticlib/jni.hpp"
 #include "staticlib/json.hpp"
@@ -27,12 +28,14 @@ namespace memlog {
 
 class agent : public sl::jvmti::agent_base<agent> {
     config cf;
+    sl::cron::expression cron;
     sl::json::array_writer<sl::io::buffered_sink<sl::tinydir::file_sink>> log_writer;
     
 public:
     agent(JavaVM* jvm, char* options) :
     sl::jvmti::agent_base<agent>(jvm, options),
     cf(read_config()),
+    cron(cf.cron_expr),
     log_writer(sl::io::make_buffered_sink(sl::tinydir::file_sink(cf.output_path_json))) {
         write_to_stdout("agent created");
     }
@@ -42,7 +45,9 @@ public:
         try {
             while(sl::jni::static_java_vm().running()) {
                 collect_and_write_measurement();
-                sl::jni::static_java_vm().thread_sleep_before_shutdown(std::chrono::milliseconds(1000));
+                auto secs = cron.next();
+                auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(secs);
+                sl::jni::static_java_vm().thread_sleep_before_shutdown(millis/cf.timeout_divider);
             }
             // all spawned threads must be joined at this point
             write_to_stdout("shutting down");
@@ -60,6 +65,7 @@ public:
 private:
     void collect_and_write_measurement() {
         log_writer.write({
+            { "currentTimeMillis", current_time_millis() },
             { "os", collect_mem_from_os() },
             { "jvm", collect_mem_from_jvm() }
         });
@@ -118,6 +124,12 @@ private:
         if (cf.stdout_messages) {
             std::cout<< "memlog_agent: " << message << std::endl;
         }
+    }
+    
+    uint64_t current_time_millis() {
+        auto val = std::chrono::system_clock::now().time_since_epoch();
+        auto millis = val/std::chrono::milliseconds(1);
+        return static_cast<uint64_t>(millis);
     }
 };
 

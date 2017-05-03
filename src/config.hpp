@@ -21,24 +21,32 @@ class config {
 public:
     std::string output_path_json;
     bool stdout_messages;
+    std::string cron_expr;
+    uint32_t timeout_divider;
 
     config(const sl::json::value& json) {
-       for (auto& fi : json.as_object_or_throw("config.json")) {
-           auto& name = fi.name();
-           if ("output_path_json" == name) {
-               output_path_json = fi.as_string_nonempty_or_throw(name);
-           } else if ("stdout_messages" == name) {
-               stdout_messages = fi.as_bool_or_throw(name);
-           } else {
-               throw memlog_exception(TRACEMSG("Invalid config field: [" + fi.name() + "]"));
-           }
-       }
+        for (auto& fi : json.as_object_or_throw("config.json")) {
+            auto& name = fi.name();
+            if ("output_path_json" == name) {
+                output_path_json = fi.as_string_nonempty_or_throw(name);
+            } else if ("stdout_messages" == name) {
+                stdout_messages = fi.as_bool_or_throw(name);
+            } else if ("cron_expr" == name) {
+                cron_expr = fi.as_string_nonempty_or_throw(name);
+            } else if ("timeout_divider" == name) {
+                timeout_divider = fi.as_uint32_or_throw(name);                
+            } else {
+                throw memlog_exception(TRACEMSG("Invalid config field: [" + fi.name() + "]"));
+            }
+        }
     }
     
     sl::json::value to_json() {
         return {
             { "output_path_json", output_path_json },
-            { "stdout_messages", stdout_messages }
+            { "stdout_messages", stdout_messages },
+            { "cron_expr", cron_expr },
+            { "timeout_divider", timeout_divider }
         };
     }
     
