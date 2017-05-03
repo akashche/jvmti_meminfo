@@ -156,8 +156,8 @@ private:
     
     uint64_t current_time_millis() {
         auto val = std::chrono::system_clock::now().time_since_epoch();
-        auto millis = val/std::chrono::milliseconds(1);
-        return static_cast<uint64_t>(millis);
+        std::chrono::milliseconds millis = std::chrono::duration_cast<std::chrono::milliseconds>(val);
+        return static_cast<uint64_t>(millis.count());
     }
     
     static void gc_finish_event(jvmtiEnv*) {
